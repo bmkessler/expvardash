@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Expvar Dashboard</title>
+        <meta name="description" content="A minimal dashboard for monitoring Go applications using expvar">
+        <script>
+            var expvarHOST = "localhost"  // the URL of the serving app, this needs to be templated
+            var expvarPORT = "8080"       // the port of the serving app, same here
+            var pollingInterval = setInterval(function(){ updateData(expvarHOST, expvarPORT); }, 2000);
+            function updateData(host, port) {
+                var expvarURL = "http://"+host+":"+port+"/processed"
+                var req = new XMLHttpRequest();
+                req.onreadystatechange = function() {
+                    if (req.readyState == 4 && req.status == 200) {
+                        console.log(req.responseText);
+                        document.getElementById("expvar").innerHTML = req.responseText;
+                    }
+                }
+                req.open("GET", expvarURL, true);
+                req.send(null);
+            }
+        </script>
+    </head>
+    <body>
+
+        <p>Monitoring Dashboard</p>
+        <p id="expvar"> </p>
+
+    </body>
+</html>
