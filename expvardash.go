@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	_ "expvar"
 	"flag"
 	"fmt"
 	"html/template"
@@ -56,7 +57,7 @@ func (dBuf *debugBuffer) Read() []debugStats {
 
 var (
 	monitoringHost  = flag.String("monhost", "localhost", "Host to monitor")
-	monitoringPort  = flag.Int64("monport", 8123, "Port to monitor")
+	monitoringPort  = flag.Int64("monport", 8080, "Port to monitor")
 	port            = flag.Int64("port", 8080, "Port to serve expvar monitoring from")
 	pollingInterval = flag.Duration("pollingint", 5*time.Second, "Interval to poll host at")
 	sampleStats     = newDebugBuffer(10)
@@ -88,7 +89,7 @@ func main() {
 	})
 
 	http.HandleFunc("/processed", func(w http.ResponseWriter, r *http.Request) {
-		stats, err := getStats("localhost", 8123)
+		stats, err := getStats("localhost", *port)
 		if err != nil {
 			log.Println(err)
 			fmt.Fprintf(w, "Error reading http://%s:%d/debug/vars\n %v", *monitoringHost, *monitoringPort, err)
