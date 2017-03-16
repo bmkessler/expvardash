@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -35,7 +37,7 @@ type debugBuffer struct {
 	data       []debugStats
 }
 
-func NewDebugBuffer(length int) *debugBuffer {
+func newDebugBuffer(length int) *debugBuffer {
 	return &debugBuffer{currentPos: 0, length: length, data: make([]debugStats, length, length)}
 }
 
@@ -57,7 +59,7 @@ var (
 	monitoringPort  = flag.Int64("monport", 8123, "Port to monitor")
 	port            = flag.Int64("port", 8080, "Port to serve expvar monitoring from")
 	pollingInterval = flag.Duration("pollingint", 5*time.Second, "Interval to poll host at")
-	sampleStats     = NewDebugBuffer(10)
+	sampleStats     = newDebugBuffer(10)
 )
 
 func main() {
@@ -75,9 +77,9 @@ func main() {
 
 	http.HandleFunc("/raw", func(w http.ResponseWriter, r *http.Request) {
 
-		if resp, err := http.Get(fmt.Sprintf("http://%s:%d/debug/vars", monitoringHost, monitoringPort)); err != nil {
+		if resp, err := http.Get(fmt.Sprintf("http://%s:%d/debug/vars", *monitoringHost, *monitoringPort)); err != nil {
 			log.Println(err)
-			fmt.Fprintf(w, "Error reading http://%s:%d/debug/vars\n %v", monitoringHost, monitoringPort, err)
+			fmt.Fprintf(w, "Error reading http://%s:%d/debug/vars\n %v", *monitoringHost, *monitoringPort, err)
 		} else {
 			if _, err := io.Copy(w, resp.Body); err != nil {
 				log.Println(err)
@@ -89,7 +91,7 @@ func main() {
 		stats, err := getStats("localhost", 8123)
 		if err != nil {
 			log.Println(err)
-			fmt.Fprintf(w, "Error reading http://%s:%d/debug/vars\n %v", monitoringHost, monitoringPort, err)
+			fmt.Fprintf(w, "Error reading http://%s:%d/debug/vars\n %v", *monitoringHost, *monitoringPort, err)
 
 		} else {
 			fmt.Fprintf(w, "cmd: %v\nalloc: %v\nsys: %v\nheap alloc: %v\nheap in use: %v\nGC CPU use: %v\nGC pause time: %v\n", stats.Cmdline[0],
@@ -108,7 +110,14 @@ func main() {
 
 	})
 
-	http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir("./static/"))))
+	//http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir("./static/"))))
+	http.HandleFunc("/dash", func(w http.ResponseWriter, r *http.Request) {
+		servingPort := struct{ Port string }{Port: strconv.Itoa(int(*port))}
+		err := indexTemplate.Execute(w, servingPort)
+		if err != nil {
+			log.Println(err)
+		}
+	})
 
 	log.Fatalln(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
 
@@ -150,3 +159,35 @@ func updateStats(ticker *time.Ticker) {
 		})
 	}
 }
+
+var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Expvar Dashboard</title>
+        <meta name="description" content="A minimal dashboard for monitoring Go applications using expvar">
+        <script>
+            var expvarHOST = "localhost"  // the URL of the this serving app
+            var expvarPORT = "{{.Port}}"       // the port of the serving app, same here
+            var pollingInterval = setInterval(function(){ updateData(expvarHOST, expvarPORT); }, 2000);
+            function updateData(host, port) {
+                var expvarURL = "http://"+host+":"+port+"/processed"
+                var req = new XMLHttpRequest();
+                req.onreadystatechange = function() {
+                    if (req.readyState == 4 && req.status == 200) {
+                        console.log(req.responseText);
+                        document.getElementById("expvar").innerHTML = req.responseText;
+                    }
+                }
+                req.open("GET", expvarURL, true);
+                req.send(null);
+            }
+        </script>
+    </head>
+    <body>
+
+        <p>Monitoring Dashboard</p>
+        <p id="expvar"> </p>
+
+    </body>
+</html>`))
